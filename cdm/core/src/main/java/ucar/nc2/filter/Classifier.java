@@ -1,51 +1,43 @@
 package ucar.nc2.filter;
 
-
 import ucar.ma2.Array;
 import ucar.ma2.IndexIterator;
 import ucar.nc2.Variable;
 import ucar.nc2.constants.CDM;
 import ucar.nc2.Attribute;
-import ucar.nc2.util.Misc;
 import java.util.ArrayList;
 import java.util.List;
 
 
 public class Classifier implements Enhancement {
-  private String[] AttCat;
+  private int classifiedVal;
+  private List<Attribute> AttCat;
   private List<int[]> rules = new ArrayList<>();
 
+  // Constructor with no arguments
   public Classifier() {
-    this.AttCat = new String[0];
+    this.AttCat = new ArrayList<>();
     this.rules = new ArrayList<>();
   }
 
   // Constructor with attributes
-  public Classifier(String[] AttCat) {
+  public Classifier(List<Attribute> AttCat) {
     this.AttCat = AttCat;
     this.rules = loadClassificationRules();
   }
 
   // Factory method to create a Classifier from a Variable
   public static Classifier createFromVariable(Variable var) {
-    List<Attribute> attributes = var.attributes().getAttributes();
 
-    for (Attribute attribute : attributes) {
-      // check like this, or something else?
-      if (attribute == var.attributes().findAttribute(CDM.CLASSIFY)) {
-        String[] sets = attribute.getStringValue().split(";");
-        for (int i = 0; i < sets.length; i++) {
-          // trim and clean so it's ready
-          sets[i] = sets[i].trim();
-        }
-        return new Classifier(sets);
-      }
+    List<Attribute> attributes = var.getAttributes();
+
+    if (var.attributes().hasAttribute(CDM.RANGE_CAT)) {
+      return new Classifier(attributes);
+    } else {
+      return new Classifier();
     }
 
-    return new Classifier();
-
   }
-
 
 
   public int[] classifyWithAttributes(Array arr) {
@@ -64,12 +56,36 @@ public class Classifier implements Enhancement {
     return classifiedArray;
   }
 
+  /** Classify double array */
+  public int[] classifyDoubleArray(Array arr) {
+    int[] classifiedArray = new int[(int) arr.getSize()];
+    int i = 0;
+    IndexIterator iterArr = arr.getIndexIterator();
+    while (iterArr.hasNext()) {
+      Number value = (Number) iterArr.getObjectNext();
+      if (!Double.isNaN(value.doubleValue())) {
 
+        classifiedArray[i] = classifyArray(value.doubleValue());
+      }
+      i++;
+    }
+    return classifiedArray;
+  }
+
+  /** for a single double */
+  public int classifyArray(double val) {
+    if (val >= 0) {
+      classifiedVal = 1;
+    } else {
+      classifiedVal = 0;
+    }
+    return classifiedVal;
+  }
 
   public int classifyArrayAttribute(double val) {
     for (int[] rule : rules) {
-      if (val > rule[0] && val <= rule[1] + Misc.defaultMaxRelativeDiffFloat) {
-        return rule[2];
+      if (val > rule[0] && val <= rule[1]) {
+        return rule[2]; // Return the matched rule's value
       }
     }
     // Return min possible int if no rule matches
@@ -78,8 +94,8 @@ public class Classifier implements Enhancement {
 
   // Method to load classification rules from the attributes
   private List<int[]> loadClassificationRules() {
-    for (String rules : this.AttCat) {
-      int[] rule = stringToIntArray(rules);
+    for (Attribute attribute : this.AttCat) {
+      int[] rule = stringToIntArray(attribute.getStringValue());
       this.rules.add(rule);
     }
     return rules;
@@ -87,7 +103,7 @@ public class Classifier implements Enhancement {
 
   @Override
   public double convert(double val) {
-    return classifyArrayAttribute(val);
+    return classifyArray(val);
   }
 
   public static int[] stringToIntArray(String str) {
